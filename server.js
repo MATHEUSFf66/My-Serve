@@ -5,51 +5,59 @@ const playerlist = require("./playerlist.js");
 
 const app = express();
 
-// Render exige que a porta seja obtida via variável de ambiente
+// Render fornece a porta via variável de ambiente
 const PORT = process.env.PORT || 3000;
 
+// Inicia o server HTTP/HTTPS que o Render gerencia
 const server = app.listen(PORT, () => {
-    console.log("Server listening on port: " + PORT);
+    console.log("Server listening on port:", PORT);
 });
 
-// Configura WebSocket sobre o mesmo server
+// WebSocket Server usando o mesmo server do Express
 const wss = new WebSocket.Server({ server });
 
 wss.on("connection", async (socket) => {
     const uuid = v4();
-    await playerlist.add(uuid);
-    const newPlayer = await playerlist.get(uuid);
 
-    // Enviar UUID ao cliente
-    socket.send(JSON.stringify({
-        cmd: "joined_server",
-        content: { msg: "Bem-vindo ao servidor!", uuid }
-    }));
+    try {
+        await playerlist.add(uuid);
+        const newPlayer = await playerlist.get(uuid);
 
-    // Enviar jogador local
-    socket.send(JSON.stringify({
-        cmd: "spawn_local_player",
-        content: { msg: "Spawning local (you) player!", player: newPlayer }
-    }));
+        // Enviar UUID ao cliente
+        socket.send(JSON.stringify({
+            cmd: "joined_server",
+            content: { msg: "Bem-vindo ao servidor!", uuid }
+        }));
 
-    // Informar novos jogadores para os demais
-    wss.clients.forEach((client) => {
-        if (client !== socket && client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify({
-                cmd: "spawn_new_player",
-                content: { msg: "Spawning new network player!", player: newPlayer }
-            }));
-        }
-    });
+        // Enviar jogador local
+        socket.send(JSON.stringify({
+            cmd: "spawn_local_player",
+            content: { msg: "Spawning local (you) player!", player: newPlayer }
+        }));
 
-    // Enviar todos os jogadores existentes ao novo cliente
-    socket.send(JSON.stringify({
-        cmd: "spawn_network_players",
-        content: {
-            msg: "Spawning network players!",
-            players: await playerlist.getAll()
-        }
-    }));
+        // Informar novos jogadores para os demais
+        wss.clients.forEach((client) => {
+            if (client !== socket && client.readyState === WebSocket.OPEN) {
+                client.send(JSON.stringify({
+                    cmd: "spawn_new_player",
+                    content: { msg: "Spawning new network player!", player: newPlayer }
+                }));
+            }
+        });
+
+        // Enviar todos os jogadores existentes ao novo cliente
+        socket.send(JSON.stringify({
+            cmd: "spawn_network_players",
+            content: {
+                msg: "Spawning network players!",
+                players: await playerlist.getAll()
+            }
+        }));
+    } catch (err) {
+        console.error("Erro ao processar novo player:", err);
+        socket.close(1011, "Internal Server Error");
+        return;
+    }
 
     // --- Receber mensagens do cliente ---
     socket.on("message", (message) => {
@@ -61,15 +69,12 @@ wss.on("connection", async (socket) => {
             return;
         }
 
-        // Atualizar posição do player
         if (data.cmd === "position") {
             playerlist.update(uuid, data.content.x, data.content.y);
-
             const update = {
                 cmd: "update_position",
                 content: { uuid, x: data.content.x, y: data.content.y }
             };
-
             wss.clients.forEach((client) => {
                 if (client !== socket && client.readyState === WebSocket.OPEN) {
                     client.send(JSON.stringify(update));
@@ -77,7 +82,6 @@ wss.on("connection", async (socket) => {
             });
         }
 
-        // Chat
         if (data.cmd === "chat") {
             const chat = { cmd: "new_chat_message", content: { msg: data.content.msg } };
             wss.clients.forEach((client) => {
@@ -93,7 +97,6 @@ wss.on("connection", async (socket) => {
         console.log(`Cliente ${uuid} desconectado.`);
         playerlist.remove(uuid);
 
-        // Avisar os outros jogadores
         wss.clients.forEach((client) => {
             if (client.readyState === WebSocket.OPEN) {
                 client.send(JSON.stringify({

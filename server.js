@@ -4,23 +4,13 @@ const { v4 } = require("uuid");
 const playerlist = require("./playerlist.js");
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = 9090;
 const server = app.listen(PORT, () => {
-    console.log("Server listening on port:", PORT);
+    console.log("Server listening on port: " + PORT);
 });
 
-// --- WebSocket Server ---
 const wss = new WebSocket.Server({ server });
 
-// --- Sistema de salas ---
-const rooms = {}; // { room_code: [uuid1, uuid2, ...] }
-const MAX_PLAYERS_PER_ROOM = 2;
-
-function generateRoomCode() {
-    return Math.random().toString(36).substring(2, 8).toUpperCase();
-}
-
-// --- Conexão de clientes ---
 wss.on("connection", async (socket) => {
     const uuid = v4();
     await playerlist.add(uuid);
@@ -32,60 +22,40 @@ wss.on("connection", async (socket) => {
         content: { msg: "Bem-vindo ao servidor!", uuid }
     }));
 
-    socket.on("message", async (message) => {
-        let data;
-        try { data = JSON.parse(message.toString()); }
-        catch (err) { console.error("JSON inválido:", err); return; }
+    // Enviar jogador local
+    socket.send(JSON.stringify({
+        cmd: "spawn_local_player",
+        content: { msg: "Spawning local (you) player!", player: newPlayer }
+    }));
 
-        // --- Criar sala ---
-        if (data.cmd === "create_room") {
-            const roomCode = generateRoomCode();
-            rooms[roomCode] = [uuid];
-
-            socket.send(JSON.stringify({
-                cmd: "room_created",
-                content: { code: roomCode }
+    // Enviar novo jogador para todos os outros
+    wss.clients.forEach((client) => {
+        if (client !== socket && client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify({
+                cmd: "spawn_new_player",
+                content: { msg: "Spawning new network player!", player: newPlayer }
             }));
+        }
+    });
 
-            console.log(`Sala criada: ${roomCode} por ${uuid}`);
+    // Enviar todos os outros jogadores ao novo cliente
+    socket.send(JSON.stringify({
+        cmd: "spawn_network_players",
+        content: {
+            msg: "Spawning network players!",
+            players: await playerlist.getAll()
+        }
+    }));
+
+    socket.on("message", (message) => {
+        let data;
+        try {
+            data = JSON.parse(message.toString());
+        } catch (err) {
+            console.error("Erro ao fazer parse do JSON:", err);
+            return;
         }
 
-        // --- Entrar em sala existente ---
-        if (data.cmd === "join_room") {
-            const code = data.content.code;
-            if (rooms[code]) {
-                rooms[code].push(uuid);
-
-                socket.send(JSON.stringify({
-                    cmd: "room_joined",
-                    content: { code }
-                }));
-
-                console.log(`${uuid} entrou na sala ${code}`);
-
-                // --- Envia start_game se sala cheia ---
-                if (rooms[code].length === MAX_PLAYERS_PER_ROOM) {
-                    rooms[code].forEach(playerUUID => {
-                        // Envia start_game para todos os players da sala
-                        wss.clients.forEach(client => {
-                            if (client.readyState === WebSocket.OPEN) {
-                                client.send(JSON.stringify({
-                                    cmd: "start_game",
-                                    content: { room: code }
-                                }));
-                            }
-                        });
-                    });
-                }
-            } else {
-                socket.send(JSON.stringify({
-                    cmd: "server_error",
-                    content: { msg: "Sala não encontrada!" }
-                }));
-            }
-        }
-
-        // --- Atualiza posição dos players ---
         if (data.cmd === "position") {
             playerlist.update(uuid, data.content.x, data.content.y);
 
@@ -98,21 +68,22 @@ wss.on("connection", async (socket) => {
                 }
             };
 
-            wss.clients.forEach(client => {
-                if (client.readyState === WebSocket.OPEN && client !== socket) {
+            wss.clients.forEach((client) => {
+                if (client !== socket && client.readyState === WebSocket.OPEN) {
                     client.send(JSON.stringify(update));
                 }
             });
         }
 
-        // --- Chat simples ---
         if (data.cmd === "chat") {
             const chat = {
                 cmd: "new_chat_message",
-                content: { msg: data.content.msg }
+                content: {
+                    msg: data.content.msg
+                }
             };
 
-            wss.clients.forEach(client => {
+            wss.clients.forEach((client) => {
                 if (client.readyState === WebSocket.OPEN) {
                     client.send(JSON.stringify(chat));
                 }
@@ -123,23 +94,17 @@ wss.on("connection", async (socket) => {
     socket.on("close", () => {
         console.log(`Cliente ${uuid} desconectado.`);
 
-        // Remove da lista
+        // Remover da lista
         playerlist.remove(uuid);
 
-        // Remove da sala
-        for (const code in rooms) {
-            rooms[code] = rooms[code].filter(id => id !== uuid);
-            if (rooms[code].length === 0) delete rooms[code];
-
-            // Avisar outros jogadores
-            wss.clients.forEach(client => {
-                if (client.readyState === WebSocket.OPEN) {
-                    client.send(JSON.stringify({
-                        cmd: "player_disconnected",
-                        content: { uuid }
-                    }));
-                }
-            });
-        }
+        // Avisar os outros jogadores
+        wss.clients.forEach((client) => {
+            if (client.readyState === WebSocket.OPEN) {
+                client.send(JSON.stringify({
+                    cmd: "player_disconnected",
+                    content: { uuid }
+                }));
+            }
+        });
     });
 });

@@ -4,11 +4,15 @@ const { v4 } = require("uuid");
 const playerlist = require("./playerlist.js");
 
 const app = express();
-const PORT = 9090;
+
+// Render exige que a porta seja obtida via variável de ambiente
+const PORT = process.env.PORT || 3000;
+
 const server = app.listen(PORT, () => {
     console.log("Server listening on port: " + PORT);
 });
 
+// Configura WebSocket sobre o mesmo server
 const wss = new WebSocket.Server({ server });
 
 wss.on("connection", async (socket) => {
@@ -28,7 +32,7 @@ wss.on("connection", async (socket) => {
         content: { msg: "Spawning local (you) player!", player: newPlayer }
     }));
 
-    // Enviar novo jogador para todos os outros
+    // Informar novos jogadores para os demais
     wss.clients.forEach((client) => {
         if (client !== socket && client.readyState === WebSocket.OPEN) {
             client.send(JSON.stringify({
@@ -38,7 +42,7 @@ wss.on("connection", async (socket) => {
         }
     });
 
-    // Enviar todos os outros jogadores ao novo cliente
+    // Enviar todos os jogadores existentes ao novo cliente
     socket.send(JSON.stringify({
         cmd: "spawn_network_players",
         content: {
@@ -47,6 +51,7 @@ wss.on("connection", async (socket) => {
         }
     }));
 
+    // --- Receber mensagens do cliente ---
     socket.on("message", (message) => {
         let data;
         try {
@@ -56,16 +61,13 @@ wss.on("connection", async (socket) => {
             return;
         }
 
+        // Atualizar posição do player
         if (data.cmd === "position") {
             playerlist.update(uuid, data.content.x, data.content.y);
 
             const update = {
                 cmd: "update_position",
-                content: {
-                    uuid,
-                    x: data.content.x,
-                    y: data.content.y
-                }
+                content: { uuid, x: data.content.x, y: data.content.y }
             };
 
             wss.clients.forEach((client) => {
@@ -75,14 +77,9 @@ wss.on("connection", async (socket) => {
             });
         }
 
+        // Chat
         if (data.cmd === "chat") {
-            const chat = {
-                cmd: "new_chat_message",
-                content: {
-                    msg: data.content.msg
-                }
-            };
-
+            const chat = { cmd: "new_chat_message", content: { msg: data.content.msg } };
             wss.clients.forEach((client) => {
                 if (client.readyState === WebSocket.OPEN) {
                     client.send(JSON.stringify(chat));
@@ -91,10 +88,9 @@ wss.on("connection", async (socket) => {
         }
     });
 
+    // --- Desconexão ---
     socket.on("close", () => {
         console.log(`Cliente ${uuid} desconectado.`);
-
-        // Remover da lista
         playerlist.remove(uuid);
 
         // Avisar os outros jogadores

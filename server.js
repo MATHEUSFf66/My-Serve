@@ -13,7 +13,8 @@ const server = app.listen(PORT, () => {
     console.log("Server listening on port:", PORT);
 });
 
-// WebSocket Server usando o mesmo server do Express
+// Cria WebSocket Server usando o mesmo server do Express
+// NÃO cria HTTPS separado! Render já fornece SSL/WSS
 const wss = new WebSocket.Server({ server });
 
 wss.on("connection", async (socket) => {
@@ -29,13 +30,13 @@ wss.on("connection", async (socket) => {
             content: { msg: "Bem-vindo ao servidor!", uuid }
         }));
 
-        // Enviar jogador local
+        // Spawn do jogador local
         socket.send(JSON.stringify({
             cmd: "spawn_local_player",
             content: { msg: "Spawning local (you) player!", player: newPlayer }
         }));
 
-        // Informar novos jogadores para os demais
+        // Informar novos jogadores aos demais
         wss.clients.forEach((client) => {
             if (client !== socket && client.readyState === WebSocket.OPEN) {
                 client.send(JSON.stringify({
@@ -53,6 +54,7 @@ wss.on("connection", async (socket) => {
                 players: await playerlist.getAll()
             }
         }));
+
     } catch (err) {
         console.error("Erro ao processar novo player:", err);
         socket.close(1011, "Internal Server Error");
@@ -69,12 +71,11 @@ wss.on("connection", async (socket) => {
             return;
         }
 
+        // Atualizar posição do player
         if (data.cmd === "position") {
             playerlist.update(uuid, data.content.x, data.content.y);
-            const update = {
-                cmd: "update_position",
-                content: { uuid, x: data.content.x, y: data.content.y }
-            };
+            const update = { cmd: "update_position", content: { uuid, x: data.content.x, y: data.content.y } };
+
             wss.clients.forEach((client) => {
                 if (client !== socket && client.readyState === WebSocket.OPEN) {
                     client.send(JSON.stringify(update));
@@ -82,6 +83,7 @@ wss.on("connection", async (socket) => {
             });
         }
 
+        // Chat
         if (data.cmd === "chat") {
             const chat = { cmd: "new_chat_message", content: { msg: data.content.msg } };
             wss.clients.forEach((client) => {
@@ -106,4 +108,9 @@ wss.on("connection", async (socket) => {
             }
         });
     });
+});
+
+// --- Opcional: rotas REST separadas para API, se necessário ---
+app.get("/health", (req, res) => {
+    res.send("Server is running!");
 });

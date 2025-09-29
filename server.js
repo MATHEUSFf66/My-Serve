@@ -4,10 +4,7 @@ const { v4 } = require("uuid");
 const playerlist = require("./playerlist.js");
 
 const app = express();
-
-// Railway fornece a porta via variável de ambiente
-const PORT = process.env.PORT || 3000;
-
+const PORT = 3000;
 const server = app.listen(PORT, () => {
     console.log("Server listening on port: " + PORT);
 });

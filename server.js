@@ -4,7 +4,7 @@ const { v4 } = require("uuid");
 const playerlist = require("./playerlist.js");
 
 const app = express();
-const PORT = 8000;
+const PORT = 9090;
 const server = app.listen(PORT, () => {
     console.log("Server listening on port: " + PORT);
 });

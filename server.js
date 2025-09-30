@@ -2,7 +2,7 @@ const express = require("express");
 const WebSocket = require("ws");
 const { v4 } = require("uuid");
 const playerlist = require("./playerlist.js");
-
+//test
 const app = express();
 
 // Rota mínima HTTP para evitar "Cannot GET /"

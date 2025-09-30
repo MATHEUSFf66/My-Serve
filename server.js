@@ -4,6 +4,12 @@ const { v4 } = require("uuid");
 const playerlist = require("./playerlist.js");
 
 const app = express();
+
+// Rota mínima HTTP para evitar "Cannot GET /"
+app.get("/", (req, res) => {
+    res.send("Servidor WebSocket ativo! Conecte via Godot WSS.");
+});
+
 const PORT = 9090;
 const server = app.listen(PORT, () => {
     console.log("Server listening on port: " + PORT);

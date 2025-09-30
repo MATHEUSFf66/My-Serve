@@ -1,18 +1,24 @@
 const express = require("express");
 const WebSocket = require("ws");
 const { v4 } = require("uuid");
-const playerlist = require("./playerlist.js"); // sua lista de jogadores
+const playerlist = require("./playerlist.js"); // Sua lista de jogadores
 
 const app = express();
+
+// --- Rota HTTP mínima para Railway ---
+app.get("/", (req, res) => {
+    res.send("Servidor WebSocket ativo! Conecte via Godot WSS.");
+});
+
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => {
     console.log("Server listening on port:", PORT);
 });
 
-// WebSocket Server
+// --- WebSocket Server ---
 const wss = new WebSocket.Server({ server });
 
-// Salas de jogo
+// --- Salas de jogo ---
 const rooms = {}; // { roomCode: [ws, ws, ...] }
 
 function generateRoomCode() {
@@ -45,6 +51,7 @@ wss.on("connection", async (socket) => {
         }
     }));
 
+    // --- Recebimento de mensagens ---
     socket.on("message", async (message) => {
         let data;
         try {
@@ -55,7 +62,7 @@ wss.on("connection", async (socket) => {
         }
 
         switch (data.cmd) {
-            // === Salas ===
+            // === Criação de sala ===
             case "create_room": {
                 const roomCode = generateRoomCode();
                 rooms[roomCode] = [socket];
@@ -68,6 +75,7 @@ wss.on("connection", async (socket) => {
                 break;
             }
 
+            // === Entrada em sala ===
             case "join_room": {
                 const roomCode = data.content.code;
                 if (!rooms[roomCode]) {
@@ -92,7 +100,7 @@ wss.on("connection", async (socket) => {
 
                 console.log(`Jogador ${uuid} entrou na sala ${roomCode}`);
 
-                // Opcional: se a sala tiver 2 jogadores, inicia partida
+                // Se a sala tiver 2 jogadores, inicia partida
                 if (rooms[roomCode].length >= 2) {
                     rooms[roomCode].forEach(client => {
                         if (client.readyState === WebSocket.OPEN) {
@@ -136,6 +144,7 @@ wss.on("connection", async (socket) => {
         }
     });
 
+    // --- Desconexão ---
     socket.on("close", () => {
         console.log(`Cliente ${uuid} desconectado.`);
         playerlist.remove(uuid);
